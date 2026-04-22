@@ -34,6 +34,7 @@ const AGENT_TASK_REGISTRATION_TIMEOUT: Duration = Duration::from_secs(30);
 const AGENT_IDENTITY_JWKS_TIMEOUT: Duration = Duration::from_secs(10);
 const AGENT_IDENTITY_JWT_AUDIENCE: &str = "codex-app-server";
 const AGENT_IDENTITY_JWT_ISSUER: &str = "https://chatgpt.com/codex-backend/agent-identity";
+const AGENT_REGISTRATION_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Stored key material for a registered agent identity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,6 +48,133 @@ pub struct AgentIdentityKey<'a> {
 pub struct AgentTaskAuthorizationTarget<'a> {
     pub agent_runtime_id: &'a str,
     pub task_id: &'a str,
+}
+
+/// Runtime identity that owns one or more registered agent tasks.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AgentRuntimeId(String);
+
+impl AgentRuntimeId {
+    pub fn new(agent_runtime_id: impl Into<String>) -> Self {
+        Self(agent_runtime_id.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_string(self) -> String {
+        self.0
+    }
+}
+
+impl From<String> for AgentRuntimeId {
+    fn from(agent_runtime_id: String) -> Self {
+        Self::new(agent_runtime_id)
+    }
+}
+
+impl From<&str> for AgentRuntimeId {
+    fn from(agent_runtime_id: &str) -> Self {
+        Self::new(agent_runtime_id)
+    }
+}
+
+/// Task identifier granted to an agent runtime for a scoped objective.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AgentTaskId(String);
+
+impl AgentTaskId {
+    pub fn new(task_id: impl Into<String>) -> Self {
+        Self(task_id.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_string(self) -> String {
+        self.0
+    }
+}
+
+impl From<String> for AgentTaskId {
+    fn from(task_id: String) -> Self {
+        Self::new(task_id)
+    }
+}
+
+impl From<&str> for AgentTaskId {
+    fn from(task_id: &str) -> Self {
+        Self::new(task_id)
+    }
+}
+
+/// Caller-owned stable reference that HAI can resolve to an opaque task id.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct AgentTaskExternalRef(String);
+
+impl AgentTaskExternalRef {
+    pub fn new(external_ref: impl Into<String>) -> Self {
+        Self(external_ref.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_string(self) -> String {
+        self.0
+    }
+}
+
+impl From<String> for AgentTaskExternalRef {
+    fn from(external_ref: String) -> Self {
+        Self::new(external_ref)
+    }
+}
+
+impl From<&str> for AgentTaskExternalRef {
+    fn from(external_ref: &str) -> Self {
+        Self::new(external_ref)
+    }
+}
+
+/// Purpose of a registered task binding.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentTaskKind {
+    Thread,
+    Background,
+}
+
+/// Registered task binding used to authorize work for an agent runtime.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RegisteredAgentTask {
+    pub agent_runtime_id: AgentRuntimeId,
+    pub task_id: AgentTaskId,
+    pub kind: AgentTaskKind,
+}
+
+impl RegisteredAgentTask {
+    pub fn new(
+        agent_runtime_id: impl Into<AgentRuntimeId>,
+        task_id: impl Into<AgentTaskId>,
+        kind: AgentTaskKind,
+    ) -> Self {
+        Self {
+            agent_runtime_id: agent_runtime_id.into(),
+            task_id: task_id.into(),
+            kind,
+        }
+    }
+
+    pub fn authorization_target(&self) -> AgentTaskAuthorizationTarget<'_> {
+        AgentTaskAuthorizationTarget {
+            agent_runtime_id: self.agent_runtime_id.as_str(),
+            task_id: self.task_id.as_str(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -86,9 +214,11 @@ struct AgentAssertionEnvelope {
 }
 
 #[derive(Serialize)]
-struct RegisterTaskRequest {
+struct RegisterTaskRequest<'a> {
     timestamp: String,
     signature: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    external_task_ref: Option<&'a str>,
 }
 
 #[derive(Deserialize)]
@@ -101,6 +231,18 @@ struct RegisterTaskResponse {
     encrypted_task_id: Option<String>,
     #[serde(default, rename = "encryptedTaskId")]
     encrypted_task_id_camel: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct RegisterAgentRequest {
+    abom: AgentBillOfMaterials,
+    agent_public_key: String,
+    capabilities: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RegisterAgentResponse {
+    agent_runtime_id: String,
 }
 
 pub fn authorization_header_for_agent_task(
@@ -123,6 +265,13 @@ pub fn authorization_header_for_agent_task(
     };
     let serialized_assertion = serialize_agent_assertion(&envelope)?;
     Ok(format!("AgentAssertion {serialized_assertion}"))
+}
+
+pub fn authorization_header_for_registered_task(
+    key: AgentIdentityKey<'_>,
+    task: &RegisteredAgentTask,
+) -> Result<String> {
+    authorization_header_for_agent_task(key, task.authorization_target())
 }
 
 pub async fn fetch_agent_identity_jwks(
@@ -198,10 +347,21 @@ pub async fn register_agent_task(
     chatgpt_base_url: &str,
     key: AgentIdentityKey<'_>,
 ) -> Result<String> {
+    register_agent_task_with_external_ref(client, chatgpt_base_url, key, /*external_ref*/ None)
+        .await
+}
+
+pub async fn register_agent_task_with_external_ref(
+    client: &reqwest::Client,
+    chatgpt_base_url: &str,
+    key: AgentIdentityKey<'_>,
+    external_ref: Option<&AgentTaskExternalRef>,
+) -> Result<String> {
     let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
     let request = RegisterTaskRequest {
         signature: sign_task_registration_payload(key, &timestamp)?,
         timestamp,
+        external_task_ref: external_ref.map(AgentTaskExternalRef::as_str),
     };
     let url = agent_task_registration_url(chatgpt_base_url, key.agent_runtime_id);
 
@@ -229,6 +389,45 @@ pub async fn register_agent_task(
         .context("failed to decode agent task registration response")?;
 
     task_id_from_register_task_response(key, response)
+}
+
+pub async fn register_agent_identity(
+    client: &reqwest::Client,
+    chatgpt_base_url: &str,
+    access_token: &str,
+    account_id: &str,
+    is_fedramp_account: bool,
+    key_material: &GeneratedAgentKeyMaterial,
+    abom: AgentBillOfMaterials,
+) -> Result<AgentRuntimeId> {
+    let url = agent_registration_url(chatgpt_base_url);
+    let request = RegisterAgentRequest {
+        abom,
+        agent_public_key: key_material.public_key_ssh.clone(),
+        capabilities: Vec::new(),
+    };
+
+    let mut request_builder = client
+        .post(&url)
+        .bearer_auth(access_token)
+        .header("ChatGPT-Account-ID", account_id)
+        .json(&request)
+        .timeout(AGENT_REGISTRATION_TIMEOUT);
+    if is_fedramp_account {
+        request_builder = request_builder.header("X-OpenAI-Fedramp", "true");
+    }
+
+    let response = request_builder
+        .send()
+        .await
+        .with_context(|| format!("failed to send agent identity registration request to {url}"))?
+        .error_for_status()
+        .with_context(|| format!("agent identity registration failed for {url}"))?
+        .json::<RegisterAgentResponse>()
+        .await
+        .with_context(|| format!("failed to parse agent identity response from {url}"))?;
+
+    Ok(AgentRuntimeId::new(response.agent_runtime_id))
 }
 
 fn task_id_from_register_task_response(
@@ -306,11 +505,6 @@ pub fn agent_task_registration_url(chatgpt_base_url: &str, agent_runtime_id: &st
     format!("{trimmed}/v1/agent/{agent_runtime_id}/task/register")
 }
 
-pub fn agent_identity_biscuit_url(chatgpt_base_url: &str) -> String {
-    let trimmed = chatgpt_base_url.trim_end_matches('/');
-    format!("{trimmed}/authenticate_app_v2")
-}
-
 pub fn agent_identity_jwks_url(chatgpt_base_url: &str) -> String {
     let trimmed = chatgpt_base_url.trim_end_matches('/');
     if trimmed.contains("/backend-api") {
@@ -320,15 +514,27 @@ pub fn agent_identity_jwks_url(chatgpt_base_url: &str) -> String {
     }
 }
 
-pub fn agent_identity_request_id() -> Result<String> {
-    let mut request_id_bytes = [0u8; 16];
-    OsRng
-        .try_fill_bytes(&mut request_id_bytes)
-        .context("failed to generate agent identity request id")?;
-    Ok(format!(
-        "codex-agent-identity-{}",
-        URL_SAFE_NO_PAD.encode(request_id_bytes)
-    ))
+pub fn normalize_chatgpt_base_url(chatgpt_base_url: &str) -> String {
+    let mut base_url = chatgpt_base_url.trim_end_matches('/').to_string();
+    for suffix in [
+        "/wham/remote/control/server/enroll",
+        "/wham/remote/control/server",
+    ] {
+        if let Some(stripped) = base_url.strip_suffix(suffix) {
+            base_url = stripped.to_string();
+            break;
+        }
+    }
+    if let Some(stripped) = base_url.strip_suffix("/codex") {
+        base_url = stripped.to_string();
+    }
+    if (base_url.starts_with("https://chatgpt.com")
+        || base_url.starts_with("https://chat.openai.com"))
+        && !base_url.contains("/backend-api")
+    {
+        base_url = format!("{base_url}/backend-api");
+    }
+    base_url
 }
 
 pub fn build_abom(session_source: SessionSource) -> AgentBillOfMaterials {
@@ -413,6 +619,63 @@ mod tests {
     use super::*;
 
     #[test]
+    fn registered_agent_task_builds_authorization_target() {
+        let task = RegisteredAgentTask::new(
+            "agent-runtime-123",
+            "task-thread-456",
+            AgentTaskKind::Thread,
+        );
+
+        assert_eq!(
+            task.authorization_target(),
+            AgentTaskAuthorizationTarget {
+                agent_runtime_id: "agent-runtime-123",
+                task_id: "task-thread-456",
+            }
+        );
+    }
+
+    #[test]
+    fn register_task_request_omits_external_ref_by_default() {
+        let request = RegisterTaskRequest {
+            timestamp: "2026-04-23T00:00:00Z".to_string(),
+            signature: "signature".to_string(),
+            external_task_ref: None,
+        };
+
+        let serialized = serde_json::to_value(request).expect("serialize request");
+
+        assert_eq!(
+            serialized,
+            serde_json::json!({
+                "timestamp": "2026-04-23T00:00:00Z",
+                "signature": "signature",
+            })
+        );
+    }
+
+    #[test]
+    fn register_task_request_includes_external_ref_when_provided() {
+        let external_ref = AgentTaskExternalRef::new("thread-123");
+        let request = RegisterTaskRequest {
+            timestamp: "2026-04-23T00:00:00Z".to_string(),
+            signature: "signature".to_string(),
+            external_task_ref: Some(external_ref.as_str()),
+        };
+
+        let serialized = serde_json::to_value(request).expect("serialize request");
+
+        assert_eq!(
+            serialized,
+            serde_json::json!({
+                "timestamp": "2026-04-23T00:00:00Z",
+                "signature": "signature",
+                "external_task_ref": "thread-123",
+            })
+        );
+    }
+
+    #[test]
     fn authorization_header_for_agent_task_serializes_signed_agent_assertion() {
         let signing_key = SigningKey::from_bytes(&[7u8; 32]);
         let private_key = signing_key
@@ -486,6 +749,41 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "agent task runtime agent-456 does not match stored agent identity agent-123"
+        );
+    }
+
+    #[test]
+    fn authorization_header_for_registered_task_uses_existing_wire_shape() {
+        let signing_key = SigningKey::from_bytes(&[7u8; 32]);
+        let private_key = signing_key
+            .to_pkcs8_der()
+            .expect("encode test key material");
+        let private_key_pkcs8_base64 = BASE64_STANDARD.encode(private_key.as_bytes());
+        let key = AgentIdentityKey {
+            agent_runtime_id: "agent-123",
+            private_key_pkcs8_base64: &private_key_pkcs8_base64,
+        };
+        let task = RegisteredAgentTask::new("agent-123", "task-123", AgentTaskKind::Background);
+
+        let header = authorization_header_for_registered_task(key, &task)
+            .expect("build registered task assertion header");
+        let token = header
+            .strip_prefix("AgentAssertion ")
+            .expect("agent assertion scheme");
+        let payload = URL_SAFE_NO_PAD
+            .decode(token)
+            .expect("valid base64url payload");
+        let envelope: AgentAssertionEnvelope =
+            serde_json::from_slice(&payload).expect("valid assertion envelope");
+
+        assert_eq!(
+            envelope,
+            AgentAssertionEnvelope {
+                agent_runtime_id: "agent-123".to_string(),
+                task_id: "task-123".to_string(),
+                timestamp: envelope.timestamp.clone(),
+                signature: envelope.signature.clone(),
+            }
         );
     }
 
@@ -701,6 +999,14 @@ J1bwkqKZTB5dHolX9A58e/xXnfZ5P8f3Z83+Izap3FwqQulk7b1WO1MQcHuVg2NN
             }]
         }))
         .expect("test JWKS should parse")
+    }
+
+    #[test]
+    fn normalize_chatgpt_base_url_strips_codex_before_backend_api() {
+        assert_eq!(
+            normalize_chatgpt_base_url("https://chatgpt.com/codex"),
+            "https://chatgpt.com/backend-api"
+        );
     }
 
     #[test]
