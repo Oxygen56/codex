@@ -2554,6 +2554,7 @@ async fn inactive_thread_permissions_approval_preserves_file_system_permissions(
                     entries: None,
                 }),
             },
+            workspace_mutation: None,
         },
     };
 
