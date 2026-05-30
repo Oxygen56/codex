@@ -1,6 +1,7 @@
 use crate::function_tool::FunctionCallError;
 use crate::session::session::SessionSettingsUpdate;
 use crate::session::thread_settings_applied_event;
+use crate::session::turn_context::TurnContext;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
@@ -32,9 +33,27 @@ use std::path::Path;
 const MAX_MODEL_VISIBLE_WORKSPACE_ROOTS: usize = 16;
 
 #[derive(Clone, Copy)]
-enum WorkspaceMutation {
+pub(crate) enum WorkspaceMutation {
     SetWorkingDirectory,
     AddWorkspaceRoot,
+}
+
+impl From<WorkspaceMutationOperation> for WorkspaceMutation {
+    fn from(value: WorkspaceMutationOperation) -> Self {
+        match value {
+            WorkspaceMutationOperation::SetWorkingDirectory => Self::SetWorkingDirectory,
+            WorkspaceMutationOperation::AddWorkspaceRoot => Self::AddWorkspaceRoot,
+        }
+    }
+}
+
+impl From<WorkspaceMutation> for WorkspaceMutationOperation {
+    fn from(value: WorkspaceMutation) -> Self {
+        match value {
+            WorkspaceMutation::SetWorkingDirectory => Self::SetWorkingDirectory,
+            WorkspaceMutation::AddWorkspaceRoot => Self::AddWorkspaceRoot,
+        }
+    }
 }
 
 pub(crate) struct WorkspaceMutationHandler {
@@ -60,23 +79,96 @@ struct WorkspaceMutationArgs {
     path: String,
 }
 
-#[derive(Serialize)]
-struct WorkspaceMutationResult {
-    changed: bool,
-    cwd: AbsolutePathBuf,
-    workspace_roots: Vec<AbsolutePathBuf>,
+#[derive(Clone, Serialize)]
+pub(crate) struct WorkspaceMutationResult {
+    pub(crate) changed: bool,
+    pub(crate) cwd: AbsolutePathBuf,
+    pub(crate) workspace_roots: Vec<AbsolutePathBuf>,
     #[serde(skip_serializing_if = "is_zero")]
     omitted_workspace_roots: usize,
 }
 
 #[derive(Serialize)]
-struct WorkspaceMutationError {
-    code: &'static str,
-    message: String,
-    cwd: AbsolutePathBuf,
-    workspace_roots: Vec<AbsolutePathBuf>,
+pub(crate) struct WorkspaceMutationError {
+    pub(crate) code: &'static str,
+    pub(crate) message: String,
+    pub(crate) cwd: AbsolutePathBuf,
+    pub(crate) workspace_roots: Vec<AbsolutePathBuf>,
     #[serde(skip_serializing_if = "is_zero")]
     omitted_workspace_roots: usize,
+}
+
+pub(crate) async fn plan_workspace_mutation(
+    turn: &TurnContext,
+    mutation: WorkspaceMutation,
+    path: String,
+) -> Result<WorkspaceMutationResult, WorkspaceMutationError> {
+    let current = turn.runtime_workspace.snapshot().await;
+    let Some(environment) = turn
+        .environments
+        .primary()
+        .filter(|_| turn.environments.turn_environments.len() == 1)
+    else {
+        return Err(WorkspaceMutationError {
+            code: "unsupported_environment_count",
+            message: "workspace mutation requires exactly one execution environment".to_string(),
+            cwd: current.cwd,
+            workspace_roots: current.workspace_roots,
+            omitted_workspace_roots: 0,
+        });
+    };
+    let requested = current.cwd.join(path);
+    let fs = environment.environment.get_filesystem();
+    let canonical = fs
+        .canonicalize(&requested, /*sandbox*/ None)
+        .await
+        .map_err(|err| WorkspaceMutationError {
+            code: io_error_code(&err),
+            message: err.to_string(),
+            cwd: current.cwd.clone(),
+            workspace_roots: current.workspace_roots.clone(),
+            omitted_workspace_roots: 0,
+        })?;
+    let metadata = fs
+        .get_metadata(&canonical, /*sandbox*/ None)
+        .await
+        .map_err(|err| WorkspaceMutationError {
+            code: io_error_code(&err),
+            message: err.to_string(),
+            cwd: current.cwd.clone(),
+            workspace_roots: current.workspace_roots.clone(),
+            omitted_workspace_roots: 0,
+        })?;
+    if !metadata.is_directory {
+        return Err(WorkspaceMutationError {
+            code: "not_a_directory",
+            message: format!(
+                "workspace mutation target is not a directory: {}",
+                canonical.as_path().display()
+            ),
+            cwd: current.cwd,
+            workspace_roots: current.workspace_roots,
+            omitted_workspace_roots: 0,
+        });
+    }
+
+    let mut workspace_roots = current.workspace_roots.clone();
+    if !workspace_roots
+        .iter()
+        .any(|root| canonical.as_path().starts_with(root.as_path()))
+    {
+        workspace_roots.push(canonical.clone());
+    }
+    let cwd = match mutation {
+        WorkspaceMutation::SetWorkingDirectory => canonical,
+        WorkspaceMutation::AddWorkspaceRoot => current.cwd.clone(),
+    };
+    Ok(WorkspaceMutationResult {
+        changed: cwd != current.cwd || workspace_roots != current.workspace_roots,
+        cwd,
+        workspace_roots,
+        omitted_workspace_roots: 0,
+    })
 }
 
 #[async_trait::async_trait]
