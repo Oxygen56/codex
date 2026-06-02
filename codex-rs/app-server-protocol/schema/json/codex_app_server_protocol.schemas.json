@@ -5654,10 +5654,7 @@
           {
             "properties": {
               "email": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "string"
               },
               "planType": {
                 "$ref": "#/definitions/v2/PlanType"
