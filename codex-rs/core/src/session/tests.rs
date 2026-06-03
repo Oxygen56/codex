@@ -7075,6 +7075,66 @@ async fn protected_data_mode_exit_clears_state_when_policy_allows() {
 }
 
 #[tokio::test]
+async fn protected_data_mode_permanently_disables_memory_generation() {
+    let (mut session, _turn_context, _rx) = make_session_and_context_with_rx().await;
+    attach_thread_persistence(Arc::get_mut(&mut session).expect("unique session")).await;
+    session
+        .live_thread()
+        .expect("live thread")
+        .update_memory_mode(ThreadMemoryMode::Enabled, /*include_archived*/ false)
+        .await
+        .expect("enable memory generation");
+
+    let state_db = session.state_db().expect("state db");
+    assert_eq!(
+        state_db
+            .get_thread_memory_mode(session.thread_id)
+            .await
+            .expect("read initial memory mode")
+            .as_deref(),
+        Some("enabled")
+    );
+
+    merge_protected_data_mode(
+        session.as_ref(),
+        ProtectedDataModeState {
+            active: true,
+            categories: vec!["financial".to_string()],
+            reason: Some("sensitive connector result".to_string()),
+        },
+    )
+    .await
+    .expect("activate protected data mode");
+
+    assert_eq!(
+        state_db
+            .get_thread_memory_mode(session.thread_id)
+            .await
+            .expect("read memory mode")
+            .as_deref(),
+        Some("disabled")
+    );
+
+    *session
+        .services
+        .protected_data_mode_exit_policy
+        .write()
+        .await = Arc::new(AllowProtectedDataModeExitPolicy);
+    try_exit_protected_data_mode(session.as_ref())
+        .await
+        .expect("allowed policy should exit protected data mode");
+
+    assert_eq!(
+        state_db
+            .get_thread_memory_mode(session.thread_id)
+            .await
+            .expect("read memory mode after exit")
+            .as_deref(),
+        Some("disabled")
+    );
+}
+
+#[tokio::test]
 async fn refresh_mcp_servers_is_deferred_until_next_turn() {
     let (session, turn_context) = make_session_and_context().await;
     let old_token = session.mcp_startup_cancellation_token().await;

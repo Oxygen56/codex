@@ -634,6 +634,11 @@ pub(super) async fn persist_protected_data_mode_update(
     };
     live_thread.persist().await?;
     live_thread.flush().await?;
+    if state.active {
+        live_thread
+            .update_memory_mode(ThreadMemoryMode::Disabled, /*include_archived*/ false)
+            .await?;
+    }
     live_thread
         .update_protected_data_mode(state, /*include_archived*/ false)
         .await?;
