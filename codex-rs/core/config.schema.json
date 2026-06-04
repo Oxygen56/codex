@@ -1191,6 +1191,16 @@
       ],
       "description": "One action binding value in config.\n\nThis accepts either:\n\n1. A single key spec string (`\"ctrl-a\"`). 2. A list of key spec strings (`[\"ctrl-a\", \"alt-a\"]`).\n\nAn empty list explicitly unbinds the action in that scope. Because an explicit empty list is still a configured value, runtime resolution must not fall through to global or built-in defaults for that action."
     },
+    "MacosSeatbeltDenialLoggingToml": {
+      "additionalProperties": false,
+      "properties": {
+        "log_macos_seatbelt_denials": {
+          "description": "On macOS, append Seatbelt sandbox denials to sandboxed command output.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
     "MarketplaceConfig": {
       "additionalProperties": false,
       "properties": {
@@ -2738,6 +2748,12 @@
       "properties": {
         "experimental_request_user_input": {
           "$ref": "#/definitions/ExperimentalRequestUserInput"
+        },
+        "shell_command": {
+          "$ref": "#/definitions/MacosSeatbeltDenialLoggingToml"
+        },
+        "unified_exec": {
+          "$ref": "#/definitions/MacosSeatbeltDenialLoggingToml"
         },
         "web_search": {
           "allOf": [

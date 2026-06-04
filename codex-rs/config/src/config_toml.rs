@@ -622,6 +622,15 @@ pub struct ToolsToml {
     )]
     pub web_search: Option<WebSearchToolConfig>,
     pub experimental_request_user_input: Option<ExperimentalRequestUserInput>,
+    pub shell_command: Option<MacosSeatbeltDenialLoggingToml>,
+    pub unified_exec: Option<MacosSeatbeltDenialLoggingToml>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct MacosSeatbeltDenialLoggingToml {
+    /// On macOS, append Seatbelt sandbox denials to sandboxed command output.
+    pub log_macos_seatbelt_denials: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema)]

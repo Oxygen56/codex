@@ -13,6 +13,7 @@ use codex_config::config_toml::AgentsToml;
 use codex_config::config_toml::AutoReviewToml;
 use codex_config::config_toml::ConfigToml;
 use codex_config::config_toml::ExperimentalRequestUserInput;
+use codex_config::config_toml::MacosSeatbeltDenialLoggingToml;
 use codex_config::config_toml::ProjectConfig;
 use codex_config::config_toml::RealtimeConfig;
 use codex_config::config_toml::RealtimeToml;
@@ -394,6 +395,8 @@ web_search = true
         Some(ToolsToml {
             web_search: None,
             experimental_request_user_input: None,
+            shell_command: None,
+            unified_exec: None,
         })
     );
 }
@@ -413,6 +416,8 @@ web_search = false
         Some(ToolsToml {
             web_search: None,
             experimental_request_user_input: None,
+            shell_command: None,
+            unified_exec: None,
         })
     );
 }
@@ -431,6 +436,8 @@ fn tools_experimental_request_user_input_defaults_to_enabled() {
         Some(ToolsToml {
             web_search: None,
             experimental_request_user_input: Some(ExperimentalRequestUserInput { enabled: true }),
+            shell_command: None,
+            unified_exec: None,
         })
     );
 }
@@ -450,6 +457,8 @@ enabled = false
         Some(ToolsToml {
             web_search: None,
             experimental_request_user_input: Some(ExperimentalRequestUserInput { enabled: false }),
+            shell_command: None,
+            unified_exec: None,
         })
     );
 }
@@ -464,6 +473,8 @@ async fn load_config_resolves_experimental_request_user_input_enabled() -> std::
                 experimental_request_user_input: Some(ExperimentalRequestUserInput {
                     enabled: false,
                 }),
+                shell_command: None,
+                unified_exec: None,
             }),
             ..ConfigToml::default()
         },
@@ -473,6 +484,32 @@ async fn load_config_resolves_experimental_request_user_input_enabled() -> std::
     .await?;
 
     assert!(!config.experimental_request_user_input_enabled);
+    Ok(())
+}
+
+#[tokio::test]
+async fn load_config_resolves_macos_seatbelt_denial_logging() -> std::io::Result<()> {
+    let codex_home = tempdir()?;
+    let config = Config::load_from_base_config_with_overrides(
+        ConfigToml {
+            tools: Some(ToolsToml {
+                shell_command: Some(MacosSeatbeltDenialLoggingToml {
+                    log_macos_seatbelt_denials: Some(true),
+                }),
+                unified_exec: Some(MacosSeatbeltDenialLoggingToml {
+                    log_macos_seatbelt_denials: Some(true),
+                }),
+                ..ToolsToml::default()
+            }),
+            ..ConfigToml::default()
+        },
+        ConfigOverrides::default(),
+        codex_home.abs(),
+    )
+    .await?;
+
+    assert!(config.shell_command.log_macos_seatbelt_denials);
+    assert!(config.unified_exec.log_macos_seatbelt_denials);
     Ok(())
 }
 

@@ -238,6 +238,35 @@ fn aggregate_output_keeps_all_bytes_when_uncapped() {
 }
 
 #[test]
+fn append_to_raw_stderr_preserves_denials_within_cap() {
+    let denials = b"\n=== Sandbox denials ===\n(touch) file-write-create /tmp/nope\n";
+    let retained_bytes_cap = denials.len() + 4;
+    let stdout = StreamOutput {
+        text: vec![b'a'; retained_bytes_cap],
+        truncated_after_lines: None,
+    };
+    let stderr = StreamOutput {
+        text: vec![b'b'; retained_bytes_cap],
+        truncated_after_lines: None,
+    };
+    let aggregated_output = aggregate_output(&stdout, &stderr, Some(retained_bytes_cap));
+    let mut raw_output = RawExecToolCallOutput {
+        exit_status: synthetic_exit_status_for_code(/*code*/ 1),
+        stdout,
+        stderr,
+        aggregated_output,
+        timed_out: false,
+    };
+
+    append_to_raw_stderr(&mut raw_output, denials, Some(retained_bytes_cap));
+
+    assert_eq!(raw_output.stderr.text.len(), retained_bytes_cap);
+    assert!(raw_output.stderr.text.ends_with(denials));
+    assert_eq!(raw_output.aggregated_output.text.len(), retained_bytes_cap);
+    assert!(raw_output.aggregated_output.text.ends_with(denials));
+}
+
+#[test]
 fn full_buffer_capture_policy_disables_caps_and_exec_expiration() {
     assert_eq!(ExecCapturePolicy::FullBuffer.retained_bytes_cap(), None);
     assert_eq!(
@@ -280,6 +309,8 @@ async fn exec_full_buffer_capture_ignores_expiration() -> Result<()> {
             arg0: None,
         },
         NetworkSandboxPolicy::Enabled,
+        /*sandbox*/ SandboxType::None,
+        /*log_macos_seatbelt_denials*/ false,
         /*stdout_stream*/ None,
         /*after_spawn*/ None,
     )
@@ -316,6 +347,8 @@ async fn exec_full_buffer_capture_keeps_io_drain_timeout_when_descendant_holds_p
                 arg0: None,
             },
             NetworkSandboxPolicy::Enabled,
+            /*sandbox*/ SandboxType::None,
+            /*log_macos_seatbelt_denials*/ false,
             /*stdout_stream*/ None,
             /*after_spawn*/ None,
         ),
@@ -1062,6 +1095,8 @@ async fn kill_child_process_group_kills_grandchildren_on_timeout() -> Result<()>
     let output = exec(
         params,
         NetworkSandboxPolicy::Restricted,
+        /*sandbox*/ SandboxType::None,
+        /*log_macos_seatbelt_denials*/ false,
         /*stdout_stream*/ None,
         /*after_spawn*/ None,
     )

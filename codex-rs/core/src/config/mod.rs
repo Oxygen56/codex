@@ -26,6 +26,7 @@ use codex_config::ThreadConfigLoader;
 use codex_config::config_toml::ConfigLockfileToml;
 use codex_config::config_toml::ConfigToml;
 use codex_config::config_toml::DEFAULT_PROJECT_DOC_MAX_BYTES;
+use codex_config::config_toml::MacosSeatbeltDenialLoggingToml;
 use codex_config::config_toml::ProjectConfig;
 use codex_config::config_toml::RealtimeAudioConfig;
 use codex_config::config_toml::RealtimeConfig;
@@ -573,6 +574,11 @@ pub enum ThreadStoreConfig {
     InMemory { id: String },
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MacosSeatbeltDenialLoggingConfig {
+    pub log_macos_seatbelt_denials: bool,
+}
+
 /// Application configuration loaded from disk and merged with overrides.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
@@ -977,6 +983,12 @@ pub struct Config {
 
     /// If set to `true`, used only the experimental unified exec tool.
     pub use_experimental_unified_exec_tool: bool,
+
+    /// Runtime settings for the model-facing `shell_command` tool.
+    pub shell_command: MacosSeatbeltDenialLoggingConfig,
+
+    /// Runtime settings for model-facing unified exec tools.
+    pub unified_exec: MacosSeatbeltDenialLoggingConfig,
 
     /// Maximum poll window for background terminal output (`write_stdin`), in milliseconds.
     /// Default: `300000` (5 minutes).
@@ -2288,6 +2300,16 @@ fn resolve_experimental_request_user_input_enabled(config_toml: &ConfigToml) -> 
         .is_none_or(|config| config.enabled)
 }
 
+fn resolve_macos_seatbelt_denial_logging_config(
+    config: Option<&MacosSeatbeltDenialLoggingToml>,
+) -> MacosSeatbeltDenialLoggingConfig {
+    MacosSeatbeltDenialLoggingConfig {
+        log_macos_seatbelt_denials: config
+            .and_then(|config| config.log_macos_seatbelt_denials)
+            .unwrap_or(false),
+    }
+}
+
 fn resolve_multi_agent_v2_config(config_toml: &ConfigToml) -> MultiAgentV2Config {
     let base = multi_agent_v2_toml_config(config_toml.features.as_ref());
     let default = MultiAgentV2Config::default();
@@ -3011,6 +3033,12 @@ impl Config {
         let web_search_config = resolve_web_search_config(&cfg);
         let experimental_request_user_input_enabled =
             resolve_experimental_request_user_input_enabled(&cfg);
+        let shell_command = resolve_macos_seatbelt_denial_logging_config(
+            cfg.tools.as_ref().and_then(|tools| tools.shell_command.as_ref()),
+        );
+        let unified_exec = resolve_macos_seatbelt_denial_logging_config(
+            cfg.tools.as_ref().and_then(|tools| tools.unified_exec.as_ref()),
+        );
         let multi_agent_v2 = resolve_multi_agent_v2_config(&cfg);
         let apps_mcp_path_override = if features.enabled(Feature::AppsMcpPathOverride) {
             let base = apps_mcp_path_override_toml_config(cfg.features.as_ref());
@@ -3553,6 +3581,8 @@ impl Config {
             web_search_config,
             experimental_request_user_input_enabled,
             use_experimental_unified_exec_tool,
+            shell_command,
+            unified_exec,
             background_terminal_max_timeout,
             ghost_snapshot,
             multi_agent_v2,
