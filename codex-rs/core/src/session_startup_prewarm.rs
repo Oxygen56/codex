@@ -46,6 +46,26 @@ impl SessionStartupPrewarmHandle {
         }
     }
 
+    async fn cancel(self, session_telemetry: &SessionTelemetry) {
+        let Self {
+            task, started_at, ..
+        } = self;
+        task.abort();
+        if task.await.is_err_and(|err| err.is_cancelled()) {
+            let duration = started_at.elapsed();
+            session_telemetry.record_startup_phase(
+                "startup_prewarm_total",
+                duration,
+                Some("cancelled"),
+            );
+            session_telemetry.record_duration(
+                STARTUP_PREWARM_DURATION_METRIC,
+                duration,
+                &[("status", "cancelled")],
+            );
+        }
+    }
+
     async fn resolve(
         self,
         session_telemetry: &SessionTelemetry,
@@ -217,6 +237,14 @@ impl Session {
         startup_prewarm
             .resolve(&self.services.session_telemetry, cancellation_token)
             .await
+    }
+
+    pub(crate) async fn cancel_session_startup_prewarm(&self) {
+        if let Some(startup_prewarm) = self.take_session_startup_prewarm().await {
+            startup_prewarm
+                .cancel(&self.services.session_telemetry)
+                .await;
+        }
     }
 }
 

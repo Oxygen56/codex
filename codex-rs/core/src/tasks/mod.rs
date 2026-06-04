@@ -232,7 +232,7 @@ pub(crate) trait SessionTask: Send + Sync + 'static {
     ///
     /// The default implementation is a no-op; override this if additional
     /// teardown or notifications are required once
-    /// [`Session::abort_all_tasks`] cancels the task.
+    /// [`Session::abort_active_turn`] cancels the task.
     fn abort(
         &self,
         session: Arc<SessionTaskContext>,
@@ -308,7 +308,7 @@ impl Session {
         input: Vec<TurnInput>,
         task: T,
     ) {
-        self.abort_all_tasks(TurnAbortReason::Replaced).await;
+        self.abort_active_turn(TurnAbortReason::Replaced).await;
         self.clear_connector_selection().await;
         self.start_task(turn_context, input, task).await;
     }
@@ -483,7 +483,7 @@ impl Session {
             .await;
     }
 
-    pub async fn abort_all_tasks(self: &Arc<Self>, reason: TurnAbortReason) {
+    pub async fn abort_active_turn(self: &Arc<Self>, reason: TurnAbortReason) {
         let mut aborted_turn = false;
         let mut active_turn_to_clear = None;
         let mut turn_context = None;
