@@ -256,6 +256,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         json: json_mode,
         prompt,
         output_schema: output_schema_path,
+        approval_policy: approval_policy_cli_arg,
         config_overrides,
     } = cli;
     let shared = shared.into_inner();
@@ -403,12 +404,16 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         None // No model specified, will use the default.
     };
 
+    // When the user provides --ask-for-approval, use it; otherwise default to
+    // Never (the existing headless-default behavior).
+    let approval_policy = approval_policy_cli_arg
+        .map(AskForApproval::from)
+        .unwrap_or(AskForApproval::Never);
+
     let overrides = ConfigOverrides {
         model,
         review_model: None,
-        // Default to never ask for approvals in headless mode. Rebuild below if
-        // the fully resolved reviewer is AutoReview.
-        approval_policy: Some(AskForApproval::Never),
+        approval_policy: Some(approval_policy),
         approvals_reviewer: None,
         sandbox_mode,
         permission_profile: None,

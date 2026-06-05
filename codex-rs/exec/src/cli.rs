@@ -2,6 +2,7 @@ use clap::Args;
 use clap::FromArgMatches;
 use clap::Parser;
 use clap::ValueEnum;
+use codex_utils_cli::ApprovalModeCliArg;
 use codex_utils_cli::CliConfigOverrides;
 use codex_utils_cli::SharedCliOptions;
 use std::path::PathBuf;
@@ -77,6 +78,10 @@ pub struct Cli {
         global = true
     )]
     pub last_message_file: Option<PathBuf>,
+
+    /// Configure when the model requires human approval before executing a command.
+    #[arg(long = "ask-for-approval", short = 'a')]
+    pub approval_policy: Option<ApprovalModeCliArg>,
 
     /// Initial instructions for the agent. If not provided as an argument (or
     /// if `-` is used), instructions are read from stdin. If stdin is piped and

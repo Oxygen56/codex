@@ -943,6 +943,10 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             exec_cli
                 .shared
                 .inherit_exec_root_options(&interactive.shared);
+            // Propagate root-level --ask-for-approval when not set on the exec subcommand.
+            if exec_cli.approval_policy.is_none() {
+                exec_cli.approval_policy = interactive.approval_policy;
+            }
             exec_cli.strict_config |= root_strict_config;
             prepend_config_flags(
                 &mut exec_cli.config_overrides,
