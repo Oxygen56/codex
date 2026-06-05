@@ -41,12 +41,27 @@ pub(crate) struct TurnTimingState {
     state: Mutex<TurnTimingStateInner>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct TurnSamplingPhaseTimings {
+    pub(crate) sampling_request_count: u64,
+    pub(crate) sampling_request_duration_ms: u64,
+    pub(crate) pre_sampling_duration_ms: u64,
+    pub(crate) inter_sampling_duration_ms: u64,
+    pub(crate) post_sampling_duration_ms: u64,
+}
+
 #[derive(Debug, Default)]
 struct TurnTimingStateInner {
     started_at: Option<Instant>,
     started_at_unix_secs: Option<i64>,
     first_token_at: Option<Instant>,
     first_message_at: Option<Instant>,
+    first_sampling_started_at: Option<Instant>,
+    active_sampling_started_at: Option<Instant>,
+    last_sampling_completed_at: Option<Instant>,
+    sampling_request_count: u64,
+    sampling_request_duration: Duration,
+    inter_sampling_duration: Duration,
 }
 
 impl TurnTimingState {
@@ -57,6 +72,12 @@ impl TurnTimingState {
         state.started_at_unix_secs = Some(started_at_unix_ms / 1000);
         state.first_token_at = None;
         state.first_message_at = None;
+        state.first_sampling_started_at = None;
+        state.active_sampling_started_at = None;
+        state.last_sampling_completed_at = None;
+        state.sampling_request_count = 0;
+        state.sampling_request_duration = Duration::ZERO;
+        state.inter_sampling_duration = Duration::ZERO;
         started_at_unix_ms
     }
 
@@ -64,13 +85,25 @@ impl TurnTimingState {
         self.state.lock().await.started_at_unix_secs
     }
 
-    pub(crate) async fn completed_at_and_duration_ms(&self) -> (Option<i64>, Option<i64>) {
+    pub(crate) async fn completed_at_duration_and_sampling_phase(
+        &self,
+    ) -> (Option<i64>, Option<i64>, Option<TurnSamplingPhaseTimings>) {
+        let completed_at_instant = Instant::now();
         let state = self.state.lock().await;
         let completed_at = Some(now_unix_timestamp_secs());
-        let duration_ms = state
-            .started_at
-            .map(|started_at| i64::try_from(started_at.elapsed().as_millis()).unwrap_or(i64::MAX));
-        (completed_at, duration_ms)
+        let duration_ms = state.started_at.map(|started_at| {
+            duration_millis_i64(completed_at_instant.saturating_duration_since(started_at))
+        });
+        let sampling_phase = state.sampling_phase_timings(completed_at_instant);
+        (completed_at, duration_ms, sampling_phase)
+    }
+
+    pub(crate) async fn mark_sampling_started(&self) {
+        self.mark_sampling_started_at(Instant::now()).await;
+    }
+
+    pub(crate) async fn mark_sampling_completed(&self) {
+        self.mark_sampling_completed_at(Instant::now()).await;
     }
 
     pub(crate) async fn time_to_first_token_ms(&self) -> Option<i64> {
@@ -98,6 +131,24 @@ impl TurnTimingState {
         let mut state = self.state.lock().await;
         state.record_turn_ttfm()
     }
+
+    async fn mark_sampling_started_at(&self, started_at: Instant) {
+        let mut state = self.state.lock().await;
+        state.mark_sampling_started(started_at);
+    }
+
+    async fn mark_sampling_completed_at(&self, completed_at: Instant) {
+        let mut state = self.state.lock().await;
+        state.mark_sampling_completed(completed_at);
+    }
+
+    #[cfg(test)]
+    async fn sampling_phase_timings_at(
+        &self,
+        completed_at: Instant,
+    ) -> Option<TurnSamplingPhaseTimings> {
+        self.state.lock().await.sampling_phase_timings(completed_at)
+    }
 }
 
 fn now_unix_timestamp_secs() -> i64 {
@@ -112,6 +163,59 @@ pub(crate) fn now_unix_timestamp_ms() -> i64 {
 }
 
 impl TurnTimingStateInner {
+    fn mark_sampling_started(&mut self, started_at: Instant) {
+        if self.started_at.is_none() || self.active_sampling_started_at.is_some() {
+            return;
+        }
+        if self.first_sampling_started_at.is_none() {
+            self.first_sampling_started_at = Some(started_at);
+        } else if let Some(last_sampling_completed_at) = self.last_sampling_completed_at {
+            self.inter_sampling_duration = self
+                .inter_sampling_duration
+                .saturating_add(started_at.saturating_duration_since(last_sampling_completed_at));
+        }
+        self.active_sampling_started_at = Some(started_at);
+        self.sampling_request_count = self.sampling_request_count.saturating_add(1);
+    }
+
+    fn mark_sampling_completed(&mut self, completed_at: Instant) {
+        let Some(started_at) = self.active_sampling_started_at.take() else {
+            return;
+        };
+        self.sampling_request_duration = self
+            .sampling_request_duration
+            .saturating_add(completed_at.saturating_duration_since(started_at));
+        self.last_sampling_completed_at = Some(completed_at);
+    }
+
+    fn sampling_phase_timings(&self, completed_at: Instant) -> Option<TurnSamplingPhaseTimings> {
+        let turn_started_at = self.started_at?;
+        let first_sampling_started_at = self.first_sampling_started_at?;
+        let active_sampling_duration = self
+            .active_sampling_started_at
+            .map(|started_at| completed_at.saturating_duration_since(started_at))
+            .unwrap_or_default();
+        let sampling_request_duration = self
+            .sampling_request_duration
+            .saturating_add(active_sampling_duration);
+        let post_sampling_duration = if self.active_sampling_started_at.is_some() {
+            Duration::ZERO
+        } else {
+            self.last_sampling_completed_at
+                .map(|last_completed_at| completed_at.saturating_duration_since(last_completed_at))
+                .unwrap_or_default()
+        };
+        Some(TurnSamplingPhaseTimings {
+            sampling_request_count: self.sampling_request_count,
+            sampling_request_duration_ms: duration_millis_u64(sampling_request_duration),
+            pre_sampling_duration_ms: duration_millis_u64(
+                first_sampling_started_at.saturating_duration_since(turn_started_at),
+            ),
+            inter_sampling_duration_ms: duration_millis_u64(self.inter_sampling_duration),
+            post_sampling_duration_ms: duration_millis_u64(post_sampling_duration),
+        })
+    }
+
     fn time_to_first_token(&self) -> Option<Duration> {
         Some(self.first_token_at?.duration_since(self.started_at?))
     }
@@ -134,6 +238,14 @@ impl TurnTimingStateInner {
         self.first_message_at = Some(first_message_at);
         Some(first_message_at.duration_since(started_at))
     }
+}
+
+fn duration_millis_i64(duration: Duration) -> i64 {
+    i64::try_from(duration.as_millis()).unwrap_or(i64::MAX)
+}
+
+fn duration_millis_u64(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
 fn response_event_records_turn_ttft(event: &ResponseEvent) -> bool {

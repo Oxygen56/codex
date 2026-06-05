@@ -33,6 +33,7 @@ use crate::session::turn_context::TurnContext;
 use crate::state::ActiveTurn;
 use crate::state::RunningTask;
 use crate::state::TaskKind;
+use codex_analytics::TurnTimingFact;
 use codex_analytics::TurnTokenUsageFact;
 use codex_login::AuthManager;
 use codex_models_manager::manager::SharedModelsManager;
@@ -743,10 +744,23 @@ impl Session {
             turn_context.config.memories.use_memories,
             turn_had_memory_citation,
         );
-        let (completed_at, duration_ms) = turn_context
+        let (completed_at, duration_ms, sampling_phase) = turn_context
             .turn_timing_state
-            .completed_at_and_duration_ms()
+            .completed_at_duration_and_sampling_phase()
             .await;
+        if let Some(sampling_phase) = sampling_phase {
+            self.services
+                .analytics_events_client
+                .track_turn_timing(TurnTimingFact {
+                    turn_id: turn_context.sub_id.clone(),
+                    thread_id: self.thread_id.to_string(),
+                    sampling_request_count: sampling_phase.sampling_request_count,
+                    sampling_request_duration_ms: sampling_phase.sampling_request_duration_ms,
+                    pre_sampling_duration_ms: sampling_phase.pre_sampling_duration_ms,
+                    inter_sampling_duration_ms: sampling_phase.inter_sampling_duration_ms,
+                    post_sampling_duration_ms: sampling_phase.post_sampling_duration_ms,
+                });
+        }
         let time_to_first_token_ms = turn_context
             .turn_timing_state
             .time_to_first_token_ms()
@@ -863,11 +877,24 @@ impl Session {
             }
         }
 
-        let (completed_at, duration_ms) = task
+        let (completed_at, duration_ms, sampling_phase) = task
             .turn_context
             .turn_timing_state
-            .completed_at_and_duration_ms()
+            .completed_at_duration_and_sampling_phase()
             .await;
+        if let Some(sampling_phase) = sampling_phase {
+            self.services
+                .analytics_events_client
+                .track_turn_timing(TurnTimingFact {
+                    turn_id: task.turn_context.sub_id.clone(),
+                    thread_id: self.thread_id.to_string(),
+                    sampling_request_count: sampling_phase.sampling_request_count,
+                    sampling_request_duration_ms: sampling_phase.sampling_request_duration_ms,
+                    pre_sampling_duration_ms: sampling_phase.pre_sampling_duration_ms,
+                    inter_sampling_duration_ms: sampling_phase.inter_sampling_duration_ms,
+                    post_sampling_duration_ms: sampling_phase.post_sampling_duration_ms,
+                });
+        }
         let event = EventMsg::TurnAborted(TurnAbortedEvent {
             turn_id: Some(task.turn_context.sub_id.clone()),
             reason,

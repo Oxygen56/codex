@@ -818,6 +818,11 @@ pub(crate) struct CodexTurnEventParams {
     pub(crate) reasoning_output_tokens: Option<i64>,
     pub(crate) total_tokens: Option<i64>,
     pub(crate) duration_ms: Option<u64>,
+    pub(crate) sampling_request_count: Option<u64>,
+    pub(crate) sampling_request_duration_ms: Option<u64>,
+    pub(crate) pre_sampling_duration_ms: Option<u64>,
+    pub(crate) inter_sampling_duration_ms: Option<u64>,
+    pub(crate) post_sampling_duration_ms: Option<u64>,
     pub(crate) started_at: Option<u64>,
     pub(crate) completed_at: Option<u64>,
 }

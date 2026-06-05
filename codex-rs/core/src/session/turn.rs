@@ -1795,7 +1795,8 @@ async fn try_run_sampling_request(
         turn_context.model_info.slug.as_str(),
         turn_context.provider.info().name.as_str(),
     );
-    let mut stream = client_session
+    turn_context.turn_timing_state.mark_sampling_started().await;
+    let stream_result = client_session
         .stream(
             prompt,
             &turn_context.model_info,
@@ -1808,7 +1809,24 @@ async fn try_run_sampling_request(
         )
         .instrument(trace_span!("stream_request"))
         .or_cancel(&cancellation_token)
-        .await??;
+        .await;
+    let mut stream = match stream_result {
+        Ok(Ok(stream)) => stream,
+        Ok(Err(err)) => {
+            turn_context
+                .turn_timing_state
+                .mark_sampling_completed()
+                .await;
+            return Err(err);
+        }
+        Err(err) => {
+            turn_context
+                .turn_timing_state
+                .mark_sampling_completed()
+                .await;
+            return Err(err.into());
+        }
+    };
     let mut in_flight: FuturesOrdered<BoxFuture<'static, CodexResult<ResponseInputItem>>> =
         FuturesOrdered::new();
     let mut needs_follow_up = false;
@@ -2208,6 +2226,10 @@ async fn try_run_sampling_request(
             }
         }
     };
+    turn_context
+        .turn_timing_state
+        .mark_sampling_completed()
+        .await;
 
     flush_assistant_text_segments_all(
         &sess,

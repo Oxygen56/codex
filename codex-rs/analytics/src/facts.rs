@@ -105,6 +105,17 @@ pub struct TurnTokenUsageFact {
 }
 
 #[derive(Clone)]
+pub struct TurnTimingFact {
+    pub turn_id: String,
+    pub thread_id: String,
+    pub sampling_request_count: u64,
+    pub sampling_request_duration_ms: u64,
+    pub pre_sampling_duration_ms: u64,
+    pub inter_sampling_duration_ms: u64,
+    pub post_sampling_duration_ms: u64,
+}
+
+#[derive(Clone)]
 pub struct TurnCodexErrorFact {
     pub(crate) turn_id: String,
     pub(crate) thread_id: String,
@@ -476,6 +487,7 @@ pub(crate) enum CustomAnalyticsFact {
     GuardianReview(Box<GuardianReviewEventParams>),
     TurnResolvedConfig(Box<TurnResolvedConfigFact>),
     TurnTokenUsage(Box<TurnTokenUsageFact>),
+    TurnTiming(Box<TurnTimingFact>),
     TurnCodexError(Box<TurnCodexErrorFact>),
     SkillInvoked(SkillInvokedInput),
     AppMentioned(AppMentionedInput),

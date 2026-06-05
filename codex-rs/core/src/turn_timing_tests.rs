@@ -4,6 +4,7 @@ use codex_protocol::models::ContentItem;
 use codex_protocol::models::FunctionCallOutputPayload;
 use codex_protocol::models::ResponseItem;
 use pretty_assertions::assert_eq;
+use std::time::Duration;
 use std::time::Instant;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
@@ -96,6 +97,62 @@ async fn turn_timing_state_records_turn_started_epoch_millis() {
     assert_eq!(
         state.started_at_unix_secs().await,
         Some(started_at_unix_ms / 1000)
+    );
+}
+
+#[tokio::test]
+async fn turn_timing_state_partitions_sampling_phases() {
+    let state = TurnTimingState::default();
+    let started_at = Instant::now();
+    state.mark_turn_started(started_at).await;
+
+    state
+        .mark_sampling_started_at(started_at + Duration::from_millis(100))
+        .await;
+    state
+        .mark_sampling_completed_at(started_at + Duration::from_millis(400))
+        .await;
+    state
+        .mark_sampling_started_at(started_at + Duration::from_millis(700))
+        .await;
+    state
+        .mark_sampling_completed_at(started_at + Duration::from_millis(1000))
+        .await;
+
+    assert_eq!(
+        state
+            .sampling_phase_timings_at(started_at + Duration::from_millis(1200))
+            .await,
+        Some(super::TurnSamplingPhaseTimings {
+            sampling_request_count: 2,
+            sampling_request_duration_ms: 600,
+            pre_sampling_duration_ms: 100,
+            inter_sampling_duration_ms: 300,
+            post_sampling_duration_ms: 200,
+        })
+    );
+}
+
+#[tokio::test]
+async fn turn_timing_state_counts_active_sampling_on_abort() {
+    let state = TurnTimingState::default();
+    let started_at = Instant::now();
+    state.mark_turn_started(started_at).await;
+    state
+        .mark_sampling_started_at(started_at + Duration::from_millis(100))
+        .await;
+
+    assert_eq!(
+        state
+            .sampling_phase_timings_at(started_at + Duration::from_millis(500))
+            .await,
+        Some(super::TurnSamplingPhaseTimings {
+            sampling_request_count: 1,
+            sampling_request_duration_ms: 400,
+            pre_sampling_duration_ms: 100,
+            inter_sampling_duration_ms: 0,
+            post_sampling_duration_ms: 0,
+        })
     );
 }
 

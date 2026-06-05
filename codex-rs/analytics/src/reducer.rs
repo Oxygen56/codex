@@ -76,6 +76,7 @@ use crate::facts::TurnResolvedConfigFact;
 use crate::facts::TurnStatus;
 use crate::facts::TurnSteerRejectionReason;
 use crate::facts::TurnSteerResult;
+use crate::facts::TurnTimingFact;
 use crate::facts::TurnTokenUsageFact;
 use crate::now_unix_seconds;
 use crate::option_i64_to_u64;
@@ -323,6 +324,7 @@ struct TurnState {
     resolved_config: Option<TurnResolvedConfigFact>,
     started_at: Option<u64>,
     token_usage: Option<TokenUsage>,
+    timing: Option<TurnTimingFact>,
     completed: Option<CompletedTurnState>,
     codex_error: Option<TurnCodexError>,
     latest_diff: Option<String>,
@@ -463,6 +465,9 @@ impl AnalyticsReducer {
                 }
                 CustomAnalyticsFact::TurnTokenUsage(input) => {
                     self.ingest_turn_token_usage(*input, out).await;
+                }
+                CustomAnalyticsFact::TurnTiming(input) => {
+                    self.ingest_turn_timing(*input, out).await;
                 }
                 CustomAnalyticsFact::TurnCodexError(input) => {
                     self.ingest_turn_codex_error(*input);
@@ -611,6 +616,7 @@ impl AnalyticsReducer {
             resolved_config: None,
             started_at: None,
             token_usage: None,
+            timing: None,
             completed: None,
             codex_error: None,
             latest_diff: None,
@@ -636,6 +642,7 @@ impl AnalyticsReducer {
             resolved_config: None,
             started_at: None,
             token_usage: None,
+            timing: None,
             completed: None,
             codex_error: None,
             latest_diff: None,
@@ -644,6 +651,31 @@ impl AnalyticsReducer {
         });
         turn_state.thread_id = Some(input.thread_id);
         turn_state.token_usage = Some(input.token_usage);
+        self.maybe_emit_turn_event(&turn_id, out).await;
+    }
+
+    async fn ingest_turn_timing(
+        &mut self,
+        input: TurnTimingFact,
+        out: &mut Vec<TrackEventRequest>,
+    ) {
+        let turn_id = input.turn_id.clone();
+        let turn_state = self.turns.entry(turn_id.clone()).or_insert(TurnState {
+            connection_id: None,
+            thread_id: None,
+            num_input_images: None,
+            resolved_config: None,
+            started_at: None,
+            token_usage: None,
+            timing: None,
+            completed: None,
+            codex_error: None,
+            latest_diff: None,
+            steer_count: 0,
+            tool_counts: TurnToolCounts::default(),
+        });
+        turn_state.thread_id = Some(input.thread_id.clone());
+        turn_state.timing = Some(input);
         self.maybe_emit_turn_event(&turn_id, out).await;
     }
 
@@ -660,6 +692,7 @@ impl AnalyticsReducer {
             resolved_config: None,
             started_at: None,
             token_usage: None,
+            timing: None,
             completed: None,
             codex_error: None,
             latest_diff: None,
@@ -825,6 +858,7 @@ impl AnalyticsReducer {
                     resolved_config: None,
                     started_at: None,
                     token_usage: None,
+                    timing: None,
                     completed: None,
                     codex_error: None,
                     latest_diff: None,
@@ -1185,6 +1219,7 @@ impl AnalyticsReducer {
                     resolved_config: None,
                     started_at: None,
                     token_usage: None,
+                    timing: None,
                     completed: None,
                     codex_error: None,
                     latest_diff: None,
@@ -1207,6 +1242,7 @@ impl AnalyticsReducer {
                             resolved_config: None,
                             started_at: None,
                             token_usage: None,
+                            timing: None,
                             completed: None,
                             codex_error: None,
                             latest_diff: None,
@@ -1227,6 +1263,7 @@ impl AnalyticsReducer {
                             resolved_config: None,
                             started_at: None,
                             token_usage: None,
+                            timing: None,
                             completed: None,
                             codex_error: None,
                             latest_diff: None,
@@ -2489,6 +2526,7 @@ fn codex_turn_event_params(
         is_first_turn,
     } = resolved_config;
     let token_usage = turn_state.token_usage.clone();
+    let timing = turn_state.timing.as_ref();
     let codex_error = turn_state.codex_error.as_ref();
     CodexTurnEventParams {
         thread_id,
@@ -2551,6 +2589,11 @@ fn codex_turn_event_params(
             .as_ref()
             .map(|token_usage| token_usage.total_tokens),
         duration_ms: completed.duration_ms,
+        sampling_request_count: timing.map(|timing| timing.sampling_request_count),
+        sampling_request_duration_ms: timing.map(|timing| timing.sampling_request_duration_ms),
+        pre_sampling_duration_ms: timing.map(|timing| timing.pre_sampling_duration_ms),
+        inter_sampling_duration_ms: timing.map(|timing| timing.inter_sampling_duration_ms),
+        post_sampling_duration_ms: timing.map(|timing| timing.post_sampling_duration_ms),
         started_at,
         completed_at: Some(completed.completed_at),
     }

@@ -66,6 +66,7 @@ use crate::facts::TurnCodexErrorFact;
 use crate::facts::TurnResolvedConfigFact;
 use crate::facts::TurnStatus;
 use crate::facts::TurnSteerRequestError;
+use crate::facts::TurnTimingFact;
 use crate::facts::TurnTokenUsageFact;
 use crate::reducer::AnalyticsReducer;
 use crate::reducer::normalize_path_for_skill_id;
@@ -3301,6 +3302,11 @@ fn turn_event_serializes_expected_shape() {
             reasoning_output_tokens: None,
             total_tokens: None,
             duration_ms: Some(1234),
+            sampling_request_count: Some(2),
+            sampling_request_duration_ms: Some(600),
+            pre_sampling_duration_ms: Some(100),
+            inter_sampling_duration_ms: Some(300),
+            post_sampling_duration_ms: Some(200),
             started_at: Some(455),
             completed_at: Some(456),
         },
@@ -3367,6 +3373,11 @@ fn turn_event_serializes_expected_shape() {
                 "reasoning_output_tokens": null,
                 "total_tokens": null,
                 "duration_ms": 1234,
+                "sampling_request_count": 2,
+                "sampling_request_duration_ms": 600,
+                "pre_sampling_duration_ms": 100,
+                "inter_sampling_duration_ms": 300,
+                "post_sampling_duration_ms": 200,
                 "started_at": 455,
                 "completed_at": 456
             }
@@ -3625,6 +3636,20 @@ async fn turn_lifecycle_emits_turn_event() {
     .await;
     reducer
         .ingest(
+            AnalyticsFact::Custom(CustomAnalyticsFact::TurnTiming(Box::new(TurnTimingFact {
+                turn_id: "turn-2".to_string(),
+                thread_id: "thread-2".to_string(),
+                sampling_request_count: 2,
+                sampling_request_duration_ms: 600,
+                pre_sampling_duration_ms: 100,
+                inter_sampling_duration_ms: 300,
+                post_sampling_duration_ms: 200,
+            }))),
+            &mut out,
+        )
+        .await;
+    reducer
+        .ingest(
             AnalyticsFact::Notification(Box::new(sample_turn_completed_notification(
                 "thread-2",
                 "turn-2",
@@ -3683,6 +3708,23 @@ async fn turn_lifecycle_emits_turn_event() {
     assert_eq!(payload["event_params"]["started_at"], json!(455));
     assert_eq!(payload["event_params"]["completed_at"], json!(456));
     assert_eq!(payload["event_params"]["duration_ms"], json!(1234));
+    assert_eq!(payload["event_params"]["sampling_request_count"], json!(2));
+    assert_eq!(
+        payload["event_params"]["sampling_request_duration_ms"],
+        json!(600)
+    );
+    assert_eq!(
+        payload["event_params"]["pre_sampling_duration_ms"],
+        json!(100)
+    );
+    assert_eq!(
+        payload["event_params"]["inter_sampling_duration_ms"],
+        json!(300)
+    );
+    assert_eq!(
+        payload["event_params"]["post_sampling_duration_ms"],
+        json!(200)
+    );
     assert_eq!(payload["event_params"]["input_tokens"], json!(123));
     assert_eq!(payload["event_params"]["cached_input_tokens"], json!(45));
     assert_eq!(payload["event_params"]["output_tokens"], json!(140));

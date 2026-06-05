@@ -20,6 +20,7 @@ use crate::facts::SubAgentThreadStartedInput;
 use crate::facts::TrackEventsContext;
 use crate::facts::TurnCodexErrorFact;
 use crate::facts::TurnResolvedConfigFact;
+use crate::facts::TurnTimingFact;
 use crate::facts::TurnTokenUsageFact;
 use crate::reducer::AnalyticsReducer;
 use codex_app_server_protocol::ClientRequest;
@@ -253,6 +254,12 @@ impl AnalyticsEventsClient {
 
     pub fn track_turn_token_usage(&self, fact: TurnTokenUsageFact) {
         self.record_fact(AnalyticsFact::Custom(CustomAnalyticsFact::TurnTokenUsage(
+            Box::new(fact),
+        )));
+    }
+
+    pub fn track_turn_timing(&self, fact: TurnTimingFact) {
+        self.record_fact(AnalyticsFact::Custom(CustomAnalyticsFact::TurnTiming(
             Box::new(fact),
         )));
     }
