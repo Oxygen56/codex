@@ -217,7 +217,12 @@ impl TurnTimingStateInner {
 
     fn sampling_phase_timings(&self, completed_at: Instant) -> Option<TurnSamplingPhaseTimings> {
         let turn_started_at = self.started_at?;
-        let first_sampling_started_at = self.first_sampling_started_at?;
+        let pre_sampling_duration = self
+            .first_sampling_started_at
+            .map(|first_sampling_started_at| {
+                first_sampling_started_at.saturating_duration_since(turn_started_at)
+            })
+            .unwrap_or_else(|| completed_at.saturating_duration_since(turn_started_at));
         let active_sampling_duration = self
             .active_sampling_started_at
             .map(|started_at| completed_at.saturating_duration_since(started_at))
@@ -239,9 +244,7 @@ impl TurnTimingStateInner {
             sampling_retry_delay_duration_ms: duration_millis_u64(
                 self.sampling_retry_delay_duration,
             ),
-            pre_sampling_duration_ms: duration_millis_u64(
-                first_sampling_started_at.saturating_duration_since(turn_started_at),
-            ),
+            pre_sampling_duration_ms: duration_millis_u64(pre_sampling_duration),
             inter_sampling_duration_ms: duration_millis_u64(self.inter_sampling_duration),
             post_sampling_duration_ms: duration_millis_u64(post_sampling_duration),
             request_user_input_count: self.request_user_input_count,

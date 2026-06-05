@@ -168,6 +168,30 @@ async fn turn_timing_state_counts_active_sampling_on_abort() {
     );
 }
 
+#[tokio::test]
+async fn turn_timing_state_attributes_zero_sampling_turn_to_pre_sampling() {
+    let state = TurnTimingState::default();
+    let started_at = Instant::now();
+    state.mark_turn_started(started_at).await;
+
+    assert_eq!(
+        state
+            .sampling_phase_timings_at(started_at + Duration::from_millis(500))
+            .await,
+        Some(super::TurnSamplingPhaseTimings {
+            sampling_request_count: 0,
+            sampling_request_duration_ms: 0,
+            sampling_retry_count: 0,
+            sampling_retry_delay_duration_ms: 0,
+            pre_sampling_duration_ms: 500,
+            inter_sampling_duration_ms: 0,
+            post_sampling_duration_ms: 0,
+            request_user_input_count: 0,
+            request_user_input_wait_duration_ms: 0,
+        })
+    );
+}
+
 #[test]
 fn response_item_records_turn_ttft_for_first_output_signals() {
     assert!(response_item_records_turn_ttft(
