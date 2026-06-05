@@ -52,6 +52,9 @@ pub(crate) struct TurnSamplingPhaseTimings {
     pub(crate) post_sampling_duration_ms: u64,
     pub(crate) request_user_input_count: u64,
     pub(crate) request_user_input_wait_duration_ms: u64,
+    pub(crate) event_dispatch_count: u64,
+    pub(crate) event_dispatch_duration_ms: u64,
+    pub(crate) final_rollout_flush_duration_ms: u64,
 }
 
 #[derive(Debug, Default)]
@@ -70,6 +73,9 @@ struct TurnTimingStateInner {
     inter_sampling_duration: Duration,
     request_user_input_count: u64,
     request_user_input_wait_duration: Duration,
+    event_dispatch_count: u64,
+    event_dispatch_duration: Duration,
+    final_rollout_flush_duration: Duration,
 }
 
 impl TurnTimingState {
@@ -90,6 +96,9 @@ impl TurnTimingState {
         state.inter_sampling_duration = Duration::ZERO;
         state.request_user_input_count = 0;
         state.request_user_input_wait_duration = Duration::ZERO;
+        state.event_dispatch_count = 0;
+        state.event_dispatch_duration = Duration::ZERO;
+        state.final_rollout_flush_duration = Duration::ZERO;
         started_at_unix_ms
     }
 
@@ -131,6 +140,16 @@ impl TurnTimingState {
         state.request_user_input_wait_duration = state
             .request_user_input_wait_duration
             .saturating_add(duration);
+    }
+
+    pub(crate) async fn record_event_dispatch(&self, duration: Duration) {
+        let mut state = self.state.lock().await;
+        state.event_dispatch_count = state.event_dispatch_count.saturating_add(1);
+        state.event_dispatch_duration = state.event_dispatch_duration.saturating_add(duration);
+    }
+
+    pub(crate) async fn record_final_rollout_flush(&self, duration: Duration) {
+        self.state.lock().await.final_rollout_flush_duration = duration;
     }
 
     pub(crate) async fn time_to_first_token_ms(&self) -> Option<i64> {
@@ -248,6 +267,9 @@ impl TurnTimingStateInner {
             request_user_input_wait_duration_ms: duration_millis_u64(
                 self.request_user_input_wait_duration,
             ),
+            event_dispatch_count: self.event_dispatch_count,
+            event_dispatch_duration_ms: duration_millis_u64(self.event_dispatch_duration),
+            final_rollout_flush_duration_ms: duration_millis_u64(self.final_rollout_flush_duration),
         })
     }
 

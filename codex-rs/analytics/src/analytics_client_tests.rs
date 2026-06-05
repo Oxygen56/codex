@@ -3311,6 +3311,9 @@ fn turn_event_serializes_expected_shape() {
             post_sampling_duration_ms: Some(200),
             request_user_input_count: Some(1),
             request_user_input_wait_duration_ms: Some(250),
+            event_dispatch_count: Some(3),
+            event_dispatch_duration_ms: Some(75),
+            final_rollout_flush_duration_ms: Some(25),
             started_at: Some(455),
             completed_at: Some(456),
         },
@@ -3386,6 +3389,9 @@ fn turn_event_serializes_expected_shape() {
                 "post_sampling_duration_ms": 200,
                 "request_user_input_count": 1,
                 "request_user_input_wait_duration_ms": 250,
+                "event_dispatch_count": 3,
+                "event_dispatch_duration_ms": 75,
+                "final_rollout_flush_duration_ms": 25,
                 "started_at": 455,
                 "completed_at": 456
             }
@@ -3656,6 +3662,9 @@ async fn turn_lifecycle_emits_turn_event() {
                 post_sampling_duration_ms: 200,
                 request_user_input_count: 1,
                 request_user_input_wait_duration_ms: 250,
+                event_dispatch_count: 3,
+                event_dispatch_duration_ms: 75,
+                final_rollout_flush_duration_ms: 25,
             }))),
             &mut out,
         )
@@ -3749,6 +3758,15 @@ async fn turn_lifecycle_emits_turn_event() {
     assert_eq!(
         payload["event_params"]["request_user_input_wait_duration_ms"],
         json!(250)
+    );
+    assert_eq!(payload["event_params"]["event_dispatch_count"], json!(3));
+    assert_eq!(
+        payload["event_params"]["event_dispatch_duration_ms"],
+        json!(75)
+    );
+    assert_eq!(
+        payload["event_params"]["final_rollout_flush_duration_ms"],
+        json!(25)
     );
     assert_eq!(payload["event_params"]["input_tokens"], json!(123));
     assert_eq!(payload["event_params"]["cached_input_tokens"], json!(45));

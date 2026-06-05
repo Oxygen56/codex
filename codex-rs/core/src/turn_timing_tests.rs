@@ -122,6 +122,11 @@ async fn turn_timing_state_partitions_sampling_phases() {
     state
         .record_request_user_input_wait(Duration::from_millis(250))
         .await;
+    state.record_event_dispatch(Duration::from_millis(75)).await;
+    state.record_event_dispatch(Duration::from_millis(25)).await;
+    state
+        .record_final_rollout_flush(Duration::from_millis(40))
+        .await;
 
     assert_eq!(
         state
@@ -137,6 +142,9 @@ async fn turn_timing_state_partitions_sampling_phases() {
             post_sampling_duration_ms: 200,
             request_user_input_count: 1,
             request_user_input_wait_duration_ms: 250,
+            event_dispatch_count: 2,
+            event_dispatch_duration_ms: 100,
+            final_rollout_flush_duration_ms: 40,
         })
     );
 }
@@ -164,6 +172,9 @@ async fn turn_timing_state_counts_active_sampling_on_abort() {
             post_sampling_duration_ms: 0,
             request_user_input_count: 0,
             request_user_input_wait_duration_ms: 0,
+            event_dispatch_count: 0,
+            event_dispatch_duration_ms: 0,
+            final_rollout_flush_duration_ms: 0,
         })
     );
 }

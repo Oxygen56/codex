@@ -407,7 +407,13 @@ impl Session {
                     )
                     .await;
                 let sess = session_ctx.clone_session();
-                if let Err(err) = sess.flush_rollout().await {
+                let flush_started_at = Instant::now();
+                let flush_result = sess.flush_rollout().await;
+                ctx_for_finish
+                    .turn_timing_state
+                    .record_final_rollout_flush(flush_started_at.elapsed())
+                    .await;
+                if let Err(err) = flush_result {
                     warn!("failed to flush rollout before completing turn: {err}");
                     sess.send_event(
                         ctx_for_finish.as_ref(),
@@ -765,6 +771,9 @@ impl Session {
                     request_user_input_count: sampling_phase.request_user_input_count,
                     request_user_input_wait_duration_ms: sampling_phase
                         .request_user_input_wait_duration_ms,
+                    event_dispatch_count: sampling_phase.event_dispatch_count,
+                    event_dispatch_duration_ms: sampling_phase.event_dispatch_duration_ms,
+                    final_rollout_flush_duration_ms: sampling_phase.final_rollout_flush_duration_ms,
                 });
         }
         let time_to_first_token_ms = turn_context
@@ -905,6 +914,9 @@ impl Session {
                     request_user_input_count: sampling_phase.request_user_input_count,
                     request_user_input_wait_duration_ms: sampling_phase
                         .request_user_input_wait_duration_ms,
+                    event_dispatch_count: sampling_phase.event_dispatch_count,
+                    event_dispatch_duration_ms: sampling_phase.event_dispatch_duration_ms,
+                    final_rollout_flush_duration_ms: sampling_phase.final_rollout_flush_duration_ms,
                 });
         }
         let event = EventMsg::TurnAborted(TurnAbortedEvent {

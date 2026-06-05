@@ -2600,6 +2600,10 @@ fn codex_turn_event_params(
         request_user_input_count: timing.map(|timing| timing.request_user_input_count),
         request_user_input_wait_duration_ms: timing
             .map(|timing| timing.request_user_input_wait_duration_ms),
+        event_dispatch_count: timing.map(|timing| timing.event_dispatch_count),
+        event_dispatch_duration_ms: timing.map(|timing| timing.event_dispatch_duration_ms),
+        final_rollout_flush_duration_ms: timing
+            .map(|timing| timing.final_rollout_flush_duration_ms),
         started_at,
         completed_at: Some(completed.completed_at),
     }

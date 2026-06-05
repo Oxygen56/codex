@@ -1659,6 +1659,7 @@ impl Session {
 
     /// Persist the event to rollout and send it to clients.
     pub(crate) async fn send_event(&self, turn_context: &TurnContext, msg: EventMsg) {
+        let dispatch_started_at = Instant::now();
         let legacy_source = msg.clone();
         self.services
             .rollout_thread_trace
@@ -1686,6 +1687,10 @@ impl Session {
             };
             self.send_event_raw(legacy_event).await;
         }
+        turn_context
+            .turn_timing_state
+            .record_event_dispatch(dispatch_started_at.elapsed())
+            .await;
     }
 
     /// Forwards terminal turn events from spawned MultiAgentV2 children to their direct parent.

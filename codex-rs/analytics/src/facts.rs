@@ -117,6 +117,9 @@ pub struct TurnTimingFact {
     pub post_sampling_duration_ms: u64,
     pub request_user_input_count: u64,
     pub request_user_input_wait_duration_ms: u64,
+    pub event_dispatch_count: u64,
+    pub event_dispatch_duration_ms: u64,
+    pub final_rollout_flush_duration_ms: u64,
 }
 
 #[derive(Clone)]

@@ -827,6 +827,9 @@ pub(crate) struct CodexTurnEventParams {
     pub(crate) post_sampling_duration_ms: Option<u64>,
     pub(crate) request_user_input_count: Option<u64>,
     pub(crate) request_user_input_wait_duration_ms: Option<u64>,
+    pub(crate) event_dispatch_count: Option<u64>,
+    pub(crate) event_dispatch_duration_ms: Option<u64>,
+    pub(crate) final_rollout_flush_duration_ms: Option<u64>,
     pub(crate) started_at: Option<u64>,
     pub(crate) completed_at: Option<u64>,
 }
