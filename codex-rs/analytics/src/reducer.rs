@@ -2591,9 +2591,15 @@ fn codex_turn_event_params(
         duration_ms: completed.duration_ms,
         sampling_request_count: timing.map(|timing| timing.sampling_request_count),
         sampling_request_duration_ms: timing.map(|timing| timing.sampling_request_duration_ms),
+        sampling_retry_count: timing.map(|timing| timing.sampling_retry_count),
+        sampling_retry_delay_duration_ms: timing
+            .map(|timing| timing.sampling_retry_delay_duration_ms),
         pre_sampling_duration_ms: timing.map(|timing| timing.pre_sampling_duration_ms),
         inter_sampling_duration_ms: timing.map(|timing| timing.inter_sampling_duration_ms),
         post_sampling_duration_ms: timing.map(|timing| timing.post_sampling_duration_ms),
+        request_user_input_count: timing.map(|timing| timing.request_user_input_count),
+        request_user_input_wait_duration_ms: timing
+            .map(|timing| timing.request_user_input_wait_duration_ms),
         started_at,
         completed_at: Some(completed.completed_at),
     }

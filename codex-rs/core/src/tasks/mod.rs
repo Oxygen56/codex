@@ -756,9 +756,15 @@ impl Session {
                     thread_id: self.thread_id.to_string(),
                     sampling_request_count: sampling_phase.sampling_request_count,
                     sampling_request_duration_ms: sampling_phase.sampling_request_duration_ms,
+                    sampling_retry_count: sampling_phase.sampling_retry_count,
+                    sampling_retry_delay_duration_ms: sampling_phase
+                        .sampling_retry_delay_duration_ms,
                     pre_sampling_duration_ms: sampling_phase.pre_sampling_duration_ms,
                     inter_sampling_duration_ms: sampling_phase.inter_sampling_duration_ms,
                     post_sampling_duration_ms: sampling_phase.post_sampling_duration_ms,
+                    request_user_input_count: sampling_phase.request_user_input_count,
+                    request_user_input_wait_duration_ms: sampling_phase
+                        .request_user_input_wait_duration_ms,
                 });
         }
         let time_to_first_token_ms = turn_context
@@ -890,9 +896,15 @@ impl Session {
                     thread_id: self.thread_id.to_string(),
                     sampling_request_count: sampling_phase.sampling_request_count,
                     sampling_request_duration_ms: sampling_phase.sampling_request_duration_ms,
+                    sampling_retry_count: sampling_phase.sampling_retry_count,
+                    sampling_retry_delay_duration_ms: sampling_phase
+                        .sampling_retry_delay_duration_ms,
                     pre_sampling_duration_ms: sampling_phase.pre_sampling_duration_ms,
                     inter_sampling_duration_ms: sampling_phase.inter_sampling_duration_ms,
                     post_sampling_duration_ms: sampling_phase.post_sampling_duration_ms,
+                    request_user_input_count: sampling_phase.request_user_input_count,
+                    request_user_input_wait_duration_ms: sampling_phase
+                        .request_user_input_wait_duration_ms,
                 });
         }
         let event = EventMsg::TurnAborted(TurnAbortedEvent {

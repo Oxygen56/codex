@@ -118,6 +118,10 @@ async fn turn_timing_state_partitions_sampling_phases() {
     state
         .mark_sampling_completed_at(started_at + Duration::from_millis(1000))
         .await;
+    state.record_sampling_retry(Duration::from_millis(50)).await;
+    state
+        .record_request_user_input_wait(Duration::from_millis(250))
+        .await;
 
     assert_eq!(
         state
@@ -126,9 +130,13 @@ async fn turn_timing_state_partitions_sampling_phases() {
         Some(super::TurnSamplingPhaseTimings {
             sampling_request_count: 2,
             sampling_request_duration_ms: 600,
+            sampling_retry_count: 1,
+            sampling_retry_delay_duration_ms: 50,
             pre_sampling_duration_ms: 100,
             inter_sampling_duration_ms: 300,
             post_sampling_duration_ms: 200,
+            request_user_input_count: 1,
+            request_user_input_wait_duration_ms: 250,
         })
     );
 }
@@ -149,9 +157,13 @@ async fn turn_timing_state_counts_active_sampling_on_abort() {
         Some(super::TurnSamplingPhaseTimings {
             sampling_request_count: 1,
             sampling_request_duration_ms: 400,
+            sampling_retry_count: 0,
+            sampling_retry_delay_duration_ms: 0,
             pre_sampling_duration_ms: 100,
             inter_sampling_duration_ms: 0,
             post_sampling_duration_ms: 0,
+            request_user_input_count: 0,
+            request_user_input_wait_duration_ms: 0,
         })
     );
 }

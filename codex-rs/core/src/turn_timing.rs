@@ -45,9 +45,13 @@ pub(crate) struct TurnTimingState {
 pub(crate) struct TurnSamplingPhaseTimings {
     pub(crate) sampling_request_count: u64,
     pub(crate) sampling_request_duration_ms: u64,
+    pub(crate) sampling_retry_count: u64,
+    pub(crate) sampling_retry_delay_duration_ms: u64,
     pub(crate) pre_sampling_duration_ms: u64,
     pub(crate) inter_sampling_duration_ms: u64,
     pub(crate) post_sampling_duration_ms: u64,
+    pub(crate) request_user_input_count: u64,
+    pub(crate) request_user_input_wait_duration_ms: u64,
 }
 
 #[derive(Debug, Default)]
@@ -61,7 +65,11 @@ struct TurnTimingStateInner {
     last_sampling_completed_at: Option<Instant>,
     sampling_request_count: u64,
     sampling_request_duration: Duration,
+    sampling_retry_count: u64,
+    sampling_retry_delay_duration: Duration,
     inter_sampling_duration: Duration,
+    request_user_input_count: u64,
+    request_user_input_wait_duration: Duration,
 }
 
 impl TurnTimingState {
@@ -77,7 +85,11 @@ impl TurnTimingState {
         state.last_sampling_completed_at = None;
         state.sampling_request_count = 0;
         state.sampling_request_duration = Duration::ZERO;
+        state.sampling_retry_count = 0;
+        state.sampling_retry_delay_duration = Duration::ZERO;
         state.inter_sampling_duration = Duration::ZERO;
+        state.request_user_input_count = 0;
+        state.request_user_input_wait_duration = Duration::ZERO;
         started_at_unix_ms
     }
 
@@ -104,6 +116,21 @@ impl TurnTimingState {
 
     pub(crate) async fn mark_sampling_completed(&self) {
         self.mark_sampling_completed_at(Instant::now()).await;
+    }
+
+    pub(crate) async fn record_sampling_retry(&self, delay: Duration) {
+        let mut state = self.state.lock().await;
+        state.sampling_retry_count = state.sampling_retry_count.saturating_add(1);
+        state.sampling_retry_delay_duration =
+            state.sampling_retry_delay_duration.saturating_add(delay);
+    }
+
+    pub(crate) async fn record_request_user_input_wait(&self, duration: Duration) {
+        let mut state = self.state.lock().await;
+        state.request_user_input_count = state.request_user_input_count.saturating_add(1);
+        state.request_user_input_wait_duration = state
+            .request_user_input_wait_duration
+            .saturating_add(duration);
     }
 
     pub(crate) async fn time_to_first_token_ms(&self) -> Option<i64> {
@@ -208,11 +235,19 @@ impl TurnTimingStateInner {
         Some(TurnSamplingPhaseTimings {
             sampling_request_count: self.sampling_request_count,
             sampling_request_duration_ms: duration_millis_u64(sampling_request_duration),
+            sampling_retry_count: self.sampling_retry_count,
+            sampling_retry_delay_duration_ms: duration_millis_u64(
+                self.sampling_retry_delay_duration,
+            ),
             pre_sampling_duration_ms: duration_millis_u64(
                 first_sampling_started_at.saturating_duration_since(turn_started_at),
             ),
             inter_sampling_duration_ms: duration_millis_u64(self.inter_sampling_duration),
             post_sampling_duration_ms: duration_millis_u64(post_sampling_duration),
+            request_user_input_count: self.request_user_input_count,
+            request_user_input_wait_duration_ms: duration_millis_u64(
+                self.request_user_input_wait_duration,
+            ),
         })
     }
 

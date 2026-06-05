@@ -3304,9 +3304,13 @@ fn turn_event_serializes_expected_shape() {
             duration_ms: Some(1234),
             sampling_request_count: Some(2),
             sampling_request_duration_ms: Some(600),
+            sampling_retry_count: Some(1),
+            sampling_retry_delay_duration_ms: Some(50),
             pre_sampling_duration_ms: Some(100),
             inter_sampling_duration_ms: Some(300),
             post_sampling_duration_ms: Some(200),
+            request_user_input_count: Some(1),
+            request_user_input_wait_duration_ms: Some(250),
             started_at: Some(455),
             completed_at: Some(456),
         },
@@ -3375,9 +3379,13 @@ fn turn_event_serializes_expected_shape() {
                 "duration_ms": 1234,
                 "sampling_request_count": 2,
                 "sampling_request_duration_ms": 600,
+                "sampling_retry_count": 1,
+                "sampling_retry_delay_duration_ms": 50,
                 "pre_sampling_duration_ms": 100,
                 "inter_sampling_duration_ms": 300,
                 "post_sampling_duration_ms": 200,
+                "request_user_input_count": 1,
+                "request_user_input_wait_duration_ms": 250,
                 "started_at": 455,
                 "completed_at": 456
             }
@@ -3641,9 +3649,13 @@ async fn turn_lifecycle_emits_turn_event() {
                 thread_id: "thread-2".to_string(),
                 sampling_request_count: 2,
                 sampling_request_duration_ms: 600,
+                sampling_retry_count: 1,
+                sampling_retry_delay_duration_ms: 50,
                 pre_sampling_duration_ms: 100,
                 inter_sampling_duration_ms: 300,
                 post_sampling_duration_ms: 200,
+                request_user_input_count: 1,
+                request_user_input_wait_duration_ms: 250,
             }))),
             &mut out,
         )
@@ -3713,6 +3725,11 @@ async fn turn_lifecycle_emits_turn_event() {
         payload["event_params"]["sampling_request_duration_ms"],
         json!(600)
     );
+    assert_eq!(payload["event_params"]["sampling_retry_count"], json!(1));
+    assert_eq!(
+        payload["event_params"]["sampling_retry_delay_duration_ms"],
+        json!(50)
+    );
     assert_eq!(
         payload["event_params"]["pre_sampling_duration_ms"],
         json!(100)
@@ -3724,6 +3741,14 @@ async fn turn_lifecycle_emits_turn_event() {
     assert_eq!(
         payload["event_params"]["post_sampling_duration_ms"],
         json!(200)
+    );
+    assert_eq!(
+        payload["event_params"]["request_user_input_count"],
+        json!(1)
+    );
+    assert_eq!(
+        payload["event_params"]["request_user_input_wait_duration_ms"],
+        json!(250)
     );
     assert_eq!(payload["event_params"]["input_tokens"], json!(123));
     assert_eq!(payload["event_params"]["cached_input_tokens"], json!(45));

@@ -110,9 +110,13 @@ pub struct TurnTimingFact {
     pub thread_id: String,
     pub sampling_request_count: u64,
     pub sampling_request_duration_ms: u64,
+    pub sampling_retry_count: u64,
+    pub sampling_retry_delay_duration_ms: u64,
     pub pre_sampling_duration_ms: u64,
     pub inter_sampling_duration_ms: u64,
     pub post_sampling_duration_ms: u64,
+    pub request_user_input_count: u64,
+    pub request_user_input_wait_duration_ms: u64,
 }
 
 #[derive(Clone)]
