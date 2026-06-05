@@ -41,6 +41,7 @@ use core_test_support::responses::start_mock_server;
 use pretty_assertions::assert_eq;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
@@ -1034,6 +1035,7 @@ async fn mcp_tool_call_request_meta_includes_turn_metadata_for_custom_server() {
         "custom_server",
         "call-custom",
         /*metadata*/ None,
+        /*third_party_connector_used*/ false,
     )
     .expect("custom servers should receive turn metadata");
     let turn_metadata = meta
@@ -1076,6 +1078,7 @@ async fn mcp_tool_call_request_meta_includes_turn_started_at_unix_ms() {
         "custom_server",
         "call-custom",
         /*metadata*/ None,
+        /*third_party_connector_used*/ false,
     )
     .expect("custom servers should receive turn metadata");
     let turn_metadata = meta
@@ -1105,7 +1108,13 @@ async fn plugin_mcp_tool_call_request_meta_includes_plugin_id() {
     metadata.plugin_id = Some("sample@test".to_string());
 
     assert_eq!(
-        build_mcp_tool_call_request_meta(&turn_context, "sample", "call-plugin", Some(&metadata),),
+        build_mcp_tool_call_request_meta(
+            &turn_context,
+            "sample",
+            "call-plugin",
+            Some(&metadata),
+            /*third_party_connector_used*/ false,
+        ),
         Some(serde_json::json!({
             crate::X_CODEX_TURN_METADATA_HEADER: expected_turn_metadata,
             MCP_TOOL_PLUGIN_ID_META_KEY: "sample@test",
@@ -1150,10 +1159,17 @@ async fn mcp_tool_call_item_includes_plugin_id() {
 #[tokio::test]
 async fn codex_apps_tool_call_request_meta_includes_turn_metadata_and_codex_apps_meta() {
     let (_, turn_context) = make_session_and_context().await;
-    let expected_turn_metadata = turn_context
+    let mut expected_turn_metadata = turn_context
         .turn_metadata_state
         .current_meta_value_for_mcp_request(mcp_turn_metadata_context(&turn_context))
         .expect("turn metadata");
+    expected_turn_metadata
+        .as_object_mut()
+        .expect("turn metadata should be an object")
+        .insert(
+            THIRD_PARTY_CONNECTOR_USED_METADATA_KEY.to_string(),
+            serde_json::Value::String("true".to_string()),
+        );
     let metadata = McpToolApprovalMetadata {
         annotations: None,
         connector_id: Some("calendar".to_string()),
@@ -1182,6 +1198,7 @@ async fn codex_apps_tool_call_request_meta_includes_turn_metadata_and_codex_apps
             CODEX_APPS_MCP_SERVER_NAME,
             "call_abc123xyz789",
             Some(&metadata),
+            /*third_party_connector_used*/ true,
         ),
         Some(serde_json::json!({
             crate::X_CODEX_TURN_METADATA_HEADER: expected_turn_metadata,
@@ -1209,6 +1226,7 @@ async fn codex_apps_tool_call_request_meta_includes_call_id_without_existing_cod
             CODEX_APPS_MCP_SERVER_NAME,
             "call_abc123xyz789",
             /*metadata*/ None,
+            /*third_party_connector_used*/ false,
         ),
         Some(serde_json::json!({
             crate::X_CODEX_TURN_METADATA_HEADER: expected_turn_metadata,
@@ -1216,6 +1234,54 @@ async fn codex_apps_tool_call_request_meta_includes_call_id_without_existing_cod
                 "call_id": "call_abc123xyz789",
             },
         }))
+    );
+}
+
+#[tokio::test]
+async fn mcp_tool_call_request_meta_marks_same_turn_third_party_connector_usage() {
+    let (session, turn_context) = make_session_and_context().await;
+    session
+        .merge_connector_selection(HashSet::from(["calendar".to_string()]))
+        .await;
+
+    let third_party_connector_used =
+        same_turn_third_party_connector_used(&session, /*metadata*/ None).await;
+    assert!(third_party_connector_used);
+
+    let meta = build_mcp_tool_call_request_meta(
+        &turn_context,
+        "search_service",
+        "call-search",
+        /*metadata*/ None,
+        third_party_connector_used,
+    )
+    .expect("search service should receive turn metadata");
+    let turn_metadata = meta
+        .get(crate::X_CODEX_TURN_METADATA_HEADER)
+        .expect("turn metadata should be present");
+
+    assert_eq!(
+        turn_metadata
+            .get(THIRD_PARTY_CONNECTOR_USED_METADATA_KEY)
+            .and_then(serde_json::Value::as_str),
+        Some("true")
+    );
+}
+
+#[tokio::test]
+async fn same_turn_third_party_connector_usage_uses_current_tool_metadata() {
+    let (session, _) = make_session_and_context().await;
+    let metadata = approval_metadata(
+        Some("calendar"),
+        Some("Calendar"),
+        /*connector_description*/ None,
+        /*tool_title*/ None,
+        /*tool_description*/ None,
+    );
+
+    assert!(
+        same_turn_third_party_connector_used(&session, Some(&metadata)).await,
+        "current tool connector metadata should mark connector usage"
     );
 }
 
